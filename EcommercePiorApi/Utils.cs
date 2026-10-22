@@ -1,30 +1,18 @@
 namespace PiorEcommerceDoMundo;
 
-// classe utilitaria "faz-tudo": validacao, log e geracao de codigo no mesmo lugar
+/// <summary>
+/// Classe legada mantida temporariamente para compatibilidade com outras partes do código.
+/// Suas responsabilidades foram divididas em:
+/// - <see cref="ValidadorEmail"/>
+/// - <see cref="ServicoLog"/>
+/// - <see cref="GeradorCodigoRastreio"/>
+/// </summary>
+[Obsolete("A classe Utils violava o Princípio da Responsabilidade Única (SRP). Utilize ValidadorEmail, ServicoLog ou GeradorCodigoRastreio diretamente.")]
 public static class Utils
 {
-    public static bool ValidarEmail(string email)
-    {
-        if (email == null) return false;
-        return email.Contains("@");
-    }
+    public static bool ValidarEmail(string email) => ValidadorEmail.EhValido(email);
 
-    public static void Log(string mensagem)
-    {
-        Console.WriteLine(mensagem);
-        try
-        {
-            File.AppendAllText("log.txt", DateTime.Now + " - " + mensagem + Environment.NewLine);
-        }
-        catch
-        {
-            // ignora qualquer erro de log, log nunca pode quebrar a aplicacao (ou sera que pode?)
-        }
-    }
+    public static void Log(string mensagem) => ServicoLog.Log(mensagem);
 
-    public static string GerarCodigoRastreio()
-    {
-        var random = new Random();
-        return "BR" + random.Next(100000, 999999);
-    }
+    public static string GerarCodigoRastreio() => GeradorCodigoRastreio.Gerar();
 }

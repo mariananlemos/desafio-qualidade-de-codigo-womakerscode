@@ -17,8 +17,8 @@ public class Pedido
     public string ClienteEmail { get; set; }
     public DateTime DataPedido { get; set; }
 
-    // status controlado por string solta, sem enum: "Pendente", "Pago", "Falhou", "Enviado"
-    public string Status { get; set; }
+    // Status tipado com enum em vez de string solta
+    public StatusPedido Status { get; set; } = StatusPedido.Pendente;
     public decimal ValorTotal { get; set; }
     public string FormaPagamento { get; set; }
     public string CodigoRastreio { get; set; }

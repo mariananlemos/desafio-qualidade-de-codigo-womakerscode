@@ -1,12 +1,25 @@
 namespace PiorEcommerceDoMundo;
 
-// "integracao" com logistica que na verdade so espera um pouco e devolve um codigo aleatorio
+/// <summary>
+/// Mock de integração com serviço externo de logística parceiro.
+/// </summary>
 public static class LogisticaMock
 {
+    private const int LatenciaIntegracaoMs = 300;
+
     public static async Task<string> EnviarAsync(Pedido pedido)
     {
-        Console.WriteLine("Enviando pedido " + pedido.Id + " para a transportadora parceira...");
-        await Task.Delay(300); // simula latencia da api externa de logistica
-        return Utils.GerarCodigoRastreio();
+        if (pedido == null)
+            throw new ArgumentNullException(nameof(pedido));
+
+        ServicoLog.Log($"Enviando pedido {pedido.Id} para a transportadora parceira...");
+
+        // Simula latência de chamada de rede sem travar thread
+        await Task.Delay(LatenciaIntegracaoMs);
+
+        var codigoRastreio = GeradorCodigoRastreio.Gerar();
+        ServicoLog.Log($"Código de rastreio gerado: {codigoRastreio} para o pedido {pedido.Id}");
+
+        return codigoRastreio;
     }
 }

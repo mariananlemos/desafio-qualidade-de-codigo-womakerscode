@@ -3,8 +3,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace PiorEcommerceDoMundo;
 
-// um unico controller cuidando de produtos, estoque, pedidos, pagamento e logistica.
-// nada de camadas, nada de injecao de dependencia, nada de SOLID. de proposito.
+// Controller concentrado (God Controller que será refatorado pela Pessoa 2).
+// Os ajustes abaixo removem números mágicos, aplicam enum de status,
+// utilizam as novas classes de log/validação e eliminam duplicações de código (Pessoa 3).
 [ApiController]
 public class EcommerceController : ControllerBase
 {
@@ -30,7 +31,7 @@ public class EcommerceController : ControllerBase
     [HttpPost("api/produtos")]
     public IActionResult CriarProduto([FromBody] Produto produto)
     {
-        if (produto.Nome == null || produto.Nome == "")
+        if (string.IsNullOrWhiteSpace(produto.Nome))
         {
             return BadRequest("nome invalido");
         }
@@ -42,7 +43,7 @@ public class EcommerceController : ControllerBase
         var db = new AppDbContext();
         db.Produtos.Add(produto);
         db.SaveChanges();
-        Utils.Log("Produto criado: " + produto.Nome);
+        ServicoLog.Log("Produto criado: " + produto.Nome);
         return Ok(produto);
     }
 
@@ -79,14 +80,12 @@ public class EcommerceController : ControllerBase
     [HttpGet("api/estoque")]
     public IActionResult ListarEstoque()
     {
-        // logica praticamente igual a ListarProdutos, copiada e colada aqui
+        // Refatoração da duplicação com ListarProdutos: projeção direta e limpa no banco
         var db = new AppDbContext();
-        var lista = db.Produtos.ToList();
-        var resultado = new List<object>();
-        foreach (var p in lista)
-        {
-            resultado.Add(new { produto = p.Nome, quantidade = p.QuantidadeEstoque });
-        }
+        var resultado = db.Produtos
+            .Select(p => new { produto = p.Nome, quantidade = p.QuantidadeEstoque })
+            .ToList();
+
         return Ok(resultado);
     }
 
@@ -99,20 +98,20 @@ public class EcommerceController : ControllerBase
 
         produto.QuantidadeEstoque = produto.QuantidadeEstoque + quantidade;
         db.SaveChanges();
-        Utils.Log("Estoque reabastecido produto " + produtoId);
+        ServicoLog.Log("Estoque reabastecido produto " + produtoId);
         return Ok(produto);
     }
 
-    // ==================== PEDIDOS (o fluxo inteiro numa unica funcao gigante) ====================
+    // ==================== PEDIDOS ====================
 
     [HttpPost("api/pedidos")]
-    public IActionResult CriarPedido([FromBody] PedidoRequest request)
+    public async Task<IActionResult> CriarPedido([FromBody] PedidoRequest request)
     {
-        if (request.ClienteNome == null || request.ClienteNome == "")
+        if (string.IsNullOrWhiteSpace(request.ClienteNome))
         {
             return BadRequest("informe o nome do cliente");
         }
-        if (!Utils.ValidarEmail(request.ClienteEmail))
+        if (!ValidadorEmail.EhValido(request.ClienteEmail))
         {
             return BadRequest("email invalido");
         }
@@ -123,15 +122,17 @@ public class EcommerceController : ControllerBase
 
         var db = new AppDbContext();
 
-        var pedido = new Pedido();
-        pedido.ClienteNome = request.ClienteNome;
-        pedido.ClienteEmail = request.ClienteEmail;
-        pedido.DataPedido = DateTime.Now;
-        pedido.FormaPagamento = request.FormaPagamento;
-        pedido.Status = "Pendente";
-        pedido.Itens = new List<ItemPedido>();
+        var pedido = new Pedido
+        {
+            ClienteNome = request.ClienteNome,
+            ClienteEmail = request.ClienteEmail,
+            DataPedido = DateTime.Now,
+            FormaPagamento = request.FormaPagamento,
+            Status = StatusPedido.Pendente,
+            Itens = new List<ItemPedido>()
+        };
 
-        decimal total = 0;
+        decimal subtotal = 0;
 
         foreach (var itemReq in request.Itens)
         {
@@ -149,53 +150,36 @@ public class EcommerceController : ControllerBase
                 return BadRequest("estoque insuficiente para " + produto.Nome);
             }
 
-            // da baixa no estoque direto aqui dentro do loop, sem transacao com o pagamento
             produto.QuantidadeEstoque = produto.QuantidadeEstoque - itemReq.Quantidade;
 
-            var item = new ItemPedido();
-            item.ProdutoId = produto.Id;
-            item.Quantidade = itemReq.Quantidade;
-            item.PrecoUnitario = produto.Preco;
+            var item = new ItemPedido
+            {
+                ProdutoId = produto.Id,
+                Quantidade = itemReq.Quantidade,
+                PrecoUnitario = produto.Preco
+            };
             pedido.Itens.Add(item);
 
-            total = total + (produto.Preco * itemReq.Quantidade);
+            subtotal += produto.Preco * itemReq.Quantidade;
         }
 
-        // regra de desconto arbitraria, com numeros magicos, direto no meio do fluxo do pedido
-        if (total > 500)
-        {
-            total = total - (total * 0.10m);
-        }
-        else if (request.ClienteEmail.Contains("vip"))
-        {
-            total = total - (total * 0.20m);
-        }
-
-        pedido.ValorTotal = total;
+        // Regra de negócio de desconto isolada e sem números mágicos
+        pedido.ValorTotal = CalculadoraDesconto.CalcularTotalComDesconto(subtotal, request.ClienteEmail);
 
         db.Pedidos.Add(pedido);
-        db.SaveChanges(); // ja salva o pedido e o estoque debitado antes mesmo de saber se o pagamento passa
+        await db.SaveChangesAsync();
 
-        bool pagamentoOk = PagamentoMock.ProcessarPagamento(total, request.FormaPagamento);
-
+        // Fluxo centralizado de pagamento (sem duplicação de lógica)
+        bool pagamentoOk = await FluxoPedidoService.ProcessarPagamentoAsync(pedido, db);
         if (!pagamentoOk)
         {
-            pedido.Status = "Falhou";
-            db.SaveChanges();
-            Utils.Log("Pagamento falhou pedido " + pedido.Id);
-            // estoque ja foi debitado la em cima e NUNCA eh estornado se o pagamento falhar (bug conhecido)
             return BadRequest("pagamento recusado");
         }
 
-        pedido.Status = "Pago";
-        db.SaveChanges();
+        // Fluxo centralizado de logística (sem duplicação e assíncrono real)
+        await FluxoPedidoService.EnviarParaLogisticaAsync(pedido, db);
 
-        var codigoRastreio = LogisticaMock.EnviarAsync(pedido).Result; // chamada assincrona usada de forma bloqueante
-        pedido.CodigoRastreio = codigoRastreio;
-        pedido.Status = "Enviado";
-        db.SaveChanges();
-
-        Utils.Log("Pedido " + pedido.Id + " criado com sucesso");
+        ServicoLog.Log("Pedido " + pedido.Id + " criado com sucesso");
 
         return Ok(pedido);
     }
@@ -217,41 +201,36 @@ public class EcommerceController : ControllerBase
         return Ok(pedido);
     }
 
-    // ==================== PAGAMENTO (endpoint separado, mas com logica duplicada do CriarPedido) ====================
+    // ==================== PAGAMENTO (reutiliza FluxoPedidoService) ====================
 
     [HttpPost("api/pagamentos/reprocessar/{pedidoId}")]
-    public IActionResult ReprocessarPagamento(int pedidoId)
+    public async Task<IActionResult> ReprocessarPagamento(int pedidoId)
     {
         var db = new AppDbContext();
         var pedido = db.Pedidos.Include(p => p.Itens).FirstOrDefault(p => p.Id == pedidoId);
         if (pedido == null) return NotFound();
 
-        bool ok = PagamentoMock.ProcessarPagamento(pedido.ValorTotal, pedido.FormaPagamento);
+        // Reutilização do fluxo de pagamento sem duplicar regras
+        bool ok = await FluxoPedidoService.ProcessarPagamentoAsync(pedido, db);
         if (!ok)
         {
-            pedido.Status = "Falhou";
-            db.SaveChanges();
             return BadRequest("pagamento recusado novamente");
         }
 
-        pedido.Status = "Pago";
-        db.SaveChanges();
         return Ok(pedido);
     }
 
-    // ==================== LOGISTICA (idem, copiado do fluxo de criar pedido) ====================
+    // ==================== LOGISTICA (reutiliza FluxoPedidoService) ====================
 
     [HttpPost("api/logistica/reenviar/{pedidoId}")]
-    public IActionResult ReenviarLogistica(int pedidoId)
+    public async Task<IActionResult> ReenviarLogistica(int pedidoId)
     {
         var db = new AppDbContext();
         var pedido = db.Pedidos.FirstOrDefault(p => p.Id == pedidoId);
         if (pedido == null) return NotFound();
 
-        var codigo = LogisticaMock.EnviarAsync(pedido).Result;
-        pedido.CodigoRastreio = codigo;
-        pedido.Status = "Enviado";
-        db.SaveChanges();
+        // Reutilização do fluxo de despacho logístico sem duplicar regras
+        await FluxoPedidoService.EnviarParaLogisticaAsync(pedido, db);
         return Ok(pedido);
     }
 }
