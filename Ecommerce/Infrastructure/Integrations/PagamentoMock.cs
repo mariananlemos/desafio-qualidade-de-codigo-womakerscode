@@ -1,23 +1,60 @@
-using Ecommerce.Domain.Entities;
+using Ecommerce.Application.Services;
 
 namespace Ecommerce.Infrastructure.Integrations;
 
-// "servico" de pagamento que na verdade eh so uma classe estatica mockada
+/// <summary>
+/// Mock de processamento de pagamentos.
+/// Não utiliza Thread.Sleep (não bloqueia a thread) nem Random para decidir regras críticas de negócio.
+/// Permite simulação previsível de sucesso e falha para desenvolvimento e testes automatizados.
+/// </summary>
 public static class PagamentoMock
 {
-    public static bool ProcessarPagamento(decimal valor, string formaPagamento)
+    private const int LatenciaGatewayMs = 500;
+
+    /// <summary>
+    /// Valor sentinela utilizado exclusivamente em testes para forçar a simulação de pagamento recusado.
+    /// </summary>
+    public const decimal ValorTesteSimularFalha = 9999.99m;
+
+    /// <summary>
+    /// Processa o pagamento de forma assíncrona, simulando latência com Task.Delay.
+    /// </summary>
+    public static async Task<bool> ProcessarPagamentoAsync(decimal valor, string formaPagamento)
     {
-        Console.WriteLine("Processando pagamento de " + valor + " via " + formaPagamento);
-        Thread.Sleep(500); // simula demora do gateway de pagamento, bloqueando a thread mesmo
+        ServicoLog.Log($"Iniciando processamento de pagamento. Valor: {valor:C2}, Forma: {formaPagamento}");
 
-        var random = new Random();
-        var sorteio = random.Next(0, 100);
+        // Simula tempo de resposta do gateway sem travar a thread da aplicação
+        await Task.Delay(LatenciaGatewayMs);
 
-        // regra de negocio critica decidida no sorteio de um numero aleatorio
-        if (formaPagamento == "cartao" && sorteio < 10)
+        // Validações determinísticas
+        if (valor <= 0)
         {
+            ServicoLog.Log("Pagamento recusado: valor inválido.");
             return false;
         }
+
+        if (string.IsNullOrWhiteSpace(formaPagamento))
+        {
+            ServicoLog.Log("Pagamento recusado: forma de pagamento não fornecida.");
+            return false;
+        }
+
+        // Cenário previsível para testar fluxo de falha sem depender de sorteio
+        if (valor == ValorTesteSimularFalha)
+        {
+            ServicoLog.Log("Pagamento recusado: simulação de falha acionada pelo valor de teste.");
+            return false;
+        }
+
+        ServicoLog.Log("Pagamento aprovado com sucesso.");
         return true;
+    }
+
+    /// <summary>
+    /// Sobrecarga síncrona mantida para compatibilidade retroativa.
+    /// </summary>
+    public static bool ProcessarPagamento(decimal valor, string formaPagamento)
+    {
+        return ProcessarPagamentoAsync(valor, formaPagamento).GetAwaiter().GetResult();
     }
 }
