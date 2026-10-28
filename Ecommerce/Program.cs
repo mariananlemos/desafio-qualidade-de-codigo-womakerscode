@@ -3,8 +3,11 @@ using Ecommerce.Infrastructure.Data;
 using System.Text.Json.Serialization;
 using Ecommerce.Controllers;
 using Ecommerce.Domain.Entities;    
+using Ecommerce.Application.Services;
+using Ecommerce.Application.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
+
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
@@ -13,6 +16,13 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddScoped<IProdutoService, ProdutoService>();
+builder.Services.AddScoped<IEstoqueService, EstoqueService>();
+builder.Services.AddScoped<IPedidoService, PedidoService>();
+builder.Services.AddScoped<IPagamentoService, PagamentoService>();
+builder.Services.AddScoped<ILogisticaService, LogisticaService>();
+
 
 var app = builder.Build();
 
