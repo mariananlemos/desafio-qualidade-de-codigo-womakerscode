@@ -26,6 +26,8 @@ builder.Services.AddScoped<ILogisticaService, LogisticaService>();
 
 var app = builder.Build();
 
+app.UseMiddleware<Ecommerce.Middleware.ErrorMiddleware>();
+
 // cria o banco e ja popula uns produtos, tudo direto aqui no Program.cs mesmo
 using (var db = new AppDbContext())
 {

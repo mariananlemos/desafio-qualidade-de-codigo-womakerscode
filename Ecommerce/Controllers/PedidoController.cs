@@ -2,6 +2,7 @@ using Ecommerce.Application.DTOs;
 using Ecommerce.Application.Interfaces;
 using Ecommerce.Application.Services;
 using Microsoft.AspNetCore.Mvc;
+using Ecommerce.Domain.Entities;
 
 namespace Ecommerce.Controllers;
 
@@ -23,7 +24,8 @@ public class PedidosController : ControllerBase
         {
         try
         {
-            return Ok(await _service.ListarPedidoAsync());
+            var pedidos = await _service.ListarPedidoAsync();
+            return Ok(pedidos.Select(ParaResponse));
         }
         catch (Exception ex)
         {
@@ -38,7 +40,7 @@ public class PedidosController : ControllerBase
         try
         {
             var pedido = await _service.BuscarPedidoAsync(id);
-            return pedido is null ? NotFound() : Ok(pedido);
+            return pedido is null ? NotFound() : Ok(ParaResponse(pedido));
         }
         catch (Exception ex)
         {
@@ -57,15 +59,36 @@ public class PedidosController : ControllerBase
             if (!resultado.Sucesso)
                 return BadRequest(new { mensagem = resultado.Mensagem });
 
+            var response = ParaResponse(resultado.Pedido!);
             return CreatedAtAction(
                 nameof(BuscarPedido),
-                new { id = resultado.Pedido!.Id },
-                resultado.Pedido);
+                new { id = response.Id },
+                response);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erro ao criar pedido");
             return StatusCode(500, new { mensagem = "Erro interno ao criar pedido." });
         }
+    }
+    private static PedidoResponse ParaResponse(Pedido pedido)
+    {
+        return new PedidoResponse
+        {
+            Id = pedido.Id,
+            ClienteNome = pedido.ClienteNome,
+            ClienteEmail = pedido.ClienteEmail,
+            DataPedido = pedido.DataPedido,
+            FormaPagamento = pedido.FormaPagamento,
+            Status = pedido.Status,
+            ValorTotal = pedido.ValorTotal,
+            CodigoRastreio = pedido.CodigoRastreio,
+            Itens = pedido.Itens.Select(i => new ItemPedidoResponse
+            {
+                ProdutoId = i.ProdutoId,
+                Quantidade = i.Quantidade,
+                PrecoUnitario = i.PrecoUnitario
+            }).ToList()
+        };
     }
 }
