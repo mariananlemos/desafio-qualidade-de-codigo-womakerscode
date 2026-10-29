@@ -45,3 +45,6 @@ secrets.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Diversos:
+estrutura.txt
