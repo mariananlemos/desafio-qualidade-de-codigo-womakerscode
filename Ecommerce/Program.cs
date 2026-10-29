@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Ecommerce.Infrastructure.Data;
 using System.Text.Json.Serialization;
 using Ecommerce.Controllers;
@@ -17,6 +18,9 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=ecommerce.db"));
+
 builder.Services.AddScoped<IProdutoService, ProdutoService>();
 builder.Services.AddScoped<IEstoqueService, EstoqueService>();
 builder.Services.AddScoped<IPedidoService, PedidoService>();
@@ -29,7 +33,8 @@ var app = builder.Build();
 app.UseMiddleware<Ecommerce.Middleware.ErrorMiddleware>();
 
 // cria o banco e ja popula uns produtos, tudo direto aqui no Program.cs mesmo
-using (var db = new AppDbContext())
+using (var scope = app.Services.CreateScope())
+using (var db = scope.ServiceProvider.GetRequiredService<AppDbContext>())
 {
     db.Database.EnsureCreated();
 
